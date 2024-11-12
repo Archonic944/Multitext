@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-word Text Finder - Find Text Online, Multiple Words</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .search-container {
+            margin-bottom: 20px;
+        }
+        #searchInput {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .options {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #textArea {
+            width: 100%;
+            height: 200px;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        #output {
+            width: 100%;
+            min-height: 200px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            white-space: pre-wrap;
+            margin-bottom: 20px;
+        }
+        .highlight-0 { background-color: #ffeb3b; }
+        .highlight-1 { background-color: #81d4fa; }
+        .highlight-2 { background-color: #a5d6a7; }
+        .highlight-3 { background-color: #f48fb1; }
+        .highlight-4 { background-color: #b39ddb; }
+        .instructions {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #e3f2fd;
+            border-radius: 4px;
+        }
+        .stats {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .term-stat {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .color-box {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Multi-word Text Highlighter</h1>
+        
+        <div class="instructions">
+            <p>Search a document for multiple words at once, online! Enter multiple search terms <strong>separated by commas.</strong> Each term will be highlighted in a different color in the <strong>results window</strong>. Scroll down to see search statistics.</p>
+        </div>
+
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder="Enter search terms separated by commas (e.g., word1, word2, word3)">
+            <div class="options">
+                <div class="option-item">
+                    <input type="checkbox" id="wholeWord">
+                    <label for="wholeWord">Match whole words only</label>
+                </div>
+                <div class="option-item">
+                    <input type="checkbox" id="excludeQuotes">
+                    <label for="excludeQuotes">Exclude text in quotations</label>
+                </div>
+            </div>
+        </div>
+
+        <textarea id="textArea" placeholder="Paste your text here..."></textarea>
+        
+        <div id="output">Results will show here...</div>
+
+        <div class="stats" id="statsText">Stats will show here...</div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const textArea = document.getElementById('textArea');
+        const output = document.getElementById('output');
+        const statsText = document.getElementById('statsText');
+        const wholeWordCheckbox = document.getElementById('wholeWord');
+        const excludeQuotesCheckbox = document.getElementById('excludeQuotes');
+
+        const colors = ['#ffeb3b', '#81d4fa', '#a5d6a7', '#f48fb1', '#b39ddb'];
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function removeQuotedText(text) {
+            return text.replace(/"[^"]*"/g, match => ' '.repeat(match.length));
+        }
+
+        function findAllMatches(text, searchTerms) {
+            const matches = [];
+            const usedRanges = new Set();
+            
+            // Handle quoted text exclusion
+            let processedText = text;
+            const quotedRanges = new Set();
+            
+            if (excludeQuotesCheckbox.checked) {
+                let quoteMatch;
+                const quoteRegex = /"[^"]*"/g;
+                while ((quoteMatch = quoteRegex.exec(text)) !== null) {
+                    const start = quoteMatch.index;
+                    const end = start + quoteMatch[0].length;
+                    quotedRanges.add(`${start}-${end}`);
+                }
+            }
+
+            // Sort search terms by length (descending) to prioritize longer matches
+            const sortedTerms = searchTerms
+                .map((term, index) => ({ term, index }))
+                .sort((a, b) => b.term.length - a.term.length);
+
+            sortedTerms.forEach(({ term, index }) => {
+                let pattern = escapeRegExp(term);
+                if (wholeWordCheckbox.checked) {
+                    pattern = `\\b${pattern}\\b`;
+                }
+                const regex = new RegExp(pattern, 'gi');
+                let match;
+                
+                while ((match = regex.exec(text)) !== null) {
+                    const start = match.index;
+                    const end = start + match[0].length;
+                    
+                    // Skip if in quoted text
+                    if (excludeQuotesCheckbox.checked) {
+                        const isInQuotes = Array.from(quotedRanges).some(range => {
+                            const [quoteStart, quoteEnd] = range.split('-').map(Number);
+                            return start >= quoteStart && end <= quoteEnd;
+                        });
+                        if (isInQuotes) continue;
+                    }
+
+                    // Check if this range overlaps with any existing matches
+                    const isOverlapping = Array.from(usedRanges).some(range => {
+                        const [usedStart, usedEnd] = range.split('-').map(Number);
+                        return (start >= usedStart && start < usedEnd) ||
+                               (end > usedStart && end <= usedEnd) ||
+                               (start <= usedStart && end >= usedEnd);
+                    });
+
+                    if (!isOverlapping) {
+                        matches.push({
+                            start,
+                            end,
+                            text: match[0],
+                            termIndex: index,
+                            term
+                        });
+                        usedRanges.add(`${start}-${end}`);
+                    }
+                }
+            });
+
+            return matches.sort((a, b) => a.start - b.start);
+        }
+
+        function highlightText() {
+            const text = textArea.value;
+            const searchTerms = searchInput.value
+                .split(',')
+                .map(term => term.trim())
+                .filter(term => term.length > 0);
+
+            if (searchTerms.length === 0) {
+                output.textContent = text;
+                statsText.innerHTML = 'Stats will show here...';
+                return;
+            }
+
+            const matches = findAllMatches(text, searchTerms);
+            const occurrences = {};
+            searchTerms.forEach(term => occurrences[term] = 0);
+            
+            let result = '';
+            let lastIndex = 0;
+
+            matches.forEach(match => {
+                occurrences[match.term]++;
+                
+                if (match.start > lastIndex) {
+                    result += text.substring(lastIndex, match.start)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                }
+                
+                result += `<span class="highlight-${match.termIndex % 5}">`;
+                result += text.substring(match.start, match.end)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                result += '</span>';
+                
+                lastIndex = match.end;
+            });
+
+            if (lastIndex < text.length) {
+                result += text.substring(lastIndex)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            }
+
+            output.innerHTML = result;
+
+            // Update statistics text
+            const totalOccurrences = Object.values(occurrences).reduce((a, b) => a + b, 0);
+            let statsHTML = `<h3>Statistics</h3><p>Total occurrences: ${totalOccurrences}</p>`;
+            Object.entries(occurrences).forEach(([term, count], index) => {
+                statsHTML += `
+                    <div class="term-stat">
+                        <div class="color-box" style="background-color: ${colors[index % 5]}"></div>
+                        <span>"${term}": ${count} occurrence${count !== 1 ? 's' : ''}</span>
+                    </div>
+                `;
+            });
+            statsText.innerHTML = statsHTML;
+        }
+
+        searchInput.addEventListener('input', highlightText);
+        textArea.addEventListener('input', highlightText);
+        wholeWordCheckbox.addEventListener('change', highlightText);
+        excludeQuotesCheckbox.addEventListener('change', highlightText);
+    </script>
+</body>
+</html>
