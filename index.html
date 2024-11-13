@@ -128,22 +128,19 @@
             return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
 
-        function removeQuotedText(text) {
-            return text.replace(/"[^"]*"/g, match => ' '.repeat(match.length));
-        }
-
         function findAllMatches(text, searchTerms) {
             const matches = [];
             const usedRanges = new Set();
             
             // Handle quoted text exclusion
             let processedText = text;
+            processedText = processedText.replaceAll("“", "\"").replaceAll("”", "\"");
             const quotedRanges = new Set();
             
             if (excludeQuotesCheckbox.checked) {
                 let quoteMatch;
                 const quoteRegex = /"[^"]*"/g;
-                while ((quoteMatch = quoteRegex.exec(text)) !== null) {
+                while ((quoteMatch = quoteRegex.exec(processedText)) !== null) {
                     const start = quoteMatch.index;
                     const end = start + quoteMatch[0].length;
                     quotedRanges.add(`${start}-${end}`);
