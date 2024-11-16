@@ -39,25 +39,21 @@
         }
         #textArea {
             width: 100%;
-            height: 200px;
+            min-height: 200px;
             padding: 8px;
             margin-bottom: 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
             resize: vertical;
-        }
-        #output {
-            width: 100%;
-            min-height: 200px;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
             background: white;
             white-space: pre-wrap;
-            margin-bottom: 20px;
+            overflow-wrap: break-word;
+            outline: none;
         }
-
-
+        #textArea:empty:before {
+            content: attr(placeholder);
+            color: #999;
+        }
         .instructions {
             margin-bottom: 20px;
             padding: 10px;
@@ -83,185 +79,242 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Multi-word Text Highlighter</h1>
-        
-        <div class="instructions">
-            <p>Search a document for multiple words at once, online! Enter multiple search terms <strong>separated by commas.</strong> Each term will be highlighted in a different color in the <strong>results window</strong>. Scroll down to see search statistics.</p>
-        </div>
+<div class="container">
+    <h1>Multi-word Text Highlighter</h1>
 
-        <div class="search-container">
-            <input type="text" id="searchInput" placeholder="Enter search terms separated by commas (e.g., word1, word2, word3)">
-            <div class="options">
-                <div class="option-item">
-                    <input checked type="checkbox" id="wholeWord">
-                    <label for="wholeWord">Match whole words only</label>
-                </div>
-                <div class="option-item">
-                    <input type="checkbox" id="excludeQuotes">
-                    <label for="excludeQuotes">Exclude text in quotations</label>
-                </div>
-            </div>
-        </div>
-
-        <textarea id="textArea" placeholder="Paste your text here..."></textarea>
-        
-        <div id="output">Results will show here...</div>
-
-        <div class="stats" id="statsText">Stats will show here...</div>
+    <div class="instructions">
+        <p>Search a document for multiple words at once, online! Enter multiple search terms <strong>separated by commas.</strong> Each term will be highlighted in a different color as you type. Scroll down to see search statistics.</p>
     </div>
 
-    <script>
-        const searchInput = document.getElementById('searchInput');
-        const textArea = document.getElementById('textArea');
-        const output = document.getElementById('output');
-        const statsText = document.getElementById('statsText');
-        const wholeWordCheckbox = document.getElementById('wholeWord');
-        const excludeQuotesCheckbox = document.getElementById('excludeQuotes');
+    <div class="search-container">
+        <input type="text" id="searchInput" placeholder="Enter search terms separated by commas (e.g., word1, word2, word3)">
+        <div class="options">
+            <div class="option-item">
+                <input checked type="checkbox" id="wholeWord">
+                <label for="wholeWord">Match whole words only</label>
+            </div>
+            <div class="option-item">
+                <input type="checkbox" id="excludeQuotes">
+                <label for="excludeQuotes">Exclude text in quotations</label>
+            </div>
+        </div>
+    </div>
 
-        const colors = ['#ffeb3b', '#81d4fa', '#a5d6a7', '#f48fb1', '#b39ddb', '#d9a84c', '#aab1e0', '#a1de8e', '#f19595', '#c594dc'];
-        const colorCount = colors.length;
+    <div id="textArea" contenteditable="true" placeholder="Paste or type your text here..."></div>
 
-        function escapeRegExp(string) {
-            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    <div class="stats" id="statsText">Stats will show here...</div>
+</div>
+
+<script>
+    const searchInput = document.getElementById('searchInput');
+    const textArea = document.getElementById('textArea');
+    const statsText = document.getElementById('statsText');
+    const wholeWordCheckbox = document.getElementById('wholeWord');
+    const excludeQuotesCheckbox = document.getElementById('excludeQuotes');
+
+    const colors = ['#ffeb3b', '#81d4fa', '#a5d6a7', '#f48fb1', '#b39ddb', '#d9a84c', '#aab1e0', '#a1de8e', '#f19595', '#c594dc'];
+    const colorCount = colors.length;
+
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function findAllMatches(text, searchTerms) {
+        const matches = [];
+        const usedRanges = new Set();
+
+        // Handle quoted text exclusion
+        let processedText = text;
+        processedText = processedText.replaceAll("“", "\"").replaceAll("”", "\"");
+        const quotedRanges = new Set();
+
+        if (excludeQuotesCheckbox.checked) {
+            let quoteMatch;
+            const quoteRegex = /"[^"]*"/g;
+            while ((quoteMatch = quoteRegex.exec(processedText)) !== null) {
+                const start = quoteMatch.index;
+                const end = start + quoteMatch[0].length;
+                quotedRanges.add(`${start}-${end}`);
+            }
         }
 
-        function findAllMatches(text, searchTerms) {
-            const matches = [];
-            const usedRanges = new Set();
-            
-            // Handle quoted text exclusion
-            let processedText = text;
-            processedText = processedText.replaceAll("“", "\"").replaceAll("”", "\"");
-            const quotedRanges = new Set();
-            
-            if (excludeQuotesCheckbox.checked) {
-                let quoteMatch;
-                const quoteRegex = /"[^"]*"/g;
-                while ((quoteMatch = quoteRegex.exec(processedText)) !== null) {
-                    const start = quoteMatch.index;
-                    const end = start + quoteMatch[0].length;
-                    quotedRanges.add(`${start}-${end}`);
-                }
+        // Sort search terms by length (descending) to prioritize longer matches
+        const sortedTerms = searchTerms
+            .map((term, index) => ({ term, index }))
+            .sort((a, b) => b.term.length - a.term.length);
+
+        sortedTerms.forEach(({ term, index }) => {
+            let pattern = escapeRegExp(term);
+            if (wholeWordCheckbox.checked) {
+                pattern = `\\b${pattern}\\b`;
             }
+            const regex = new RegExp(pattern, 'gi');
+            let match;
 
-            // Sort search terms by length (descending) to prioritize longer matches
-            const sortedTerms = searchTerms
-                .map((term, index) => ({ term, index }))
-                .sort((a, b) => b.term.length - a.term.length);
+            while ((match = regex.exec(text)) !== null) {
+                const start = match.index;
+                const end = start + match[0].length;
 
-            sortedTerms.forEach(({ term, index }) => {
-                let pattern = escapeRegExp(term);
-                if (wholeWordCheckbox.checked) {
-                    pattern = `\\b${pattern}\\b`;
-                }
-                const regex = new RegExp(pattern, 'gi');
-                let match;
-                
-                while ((match = regex.exec(text)) !== null) {
-                    const start = match.index;
-                    const end = start + match[0].length;
-                    
-                    // Skip if in quoted text
-                    if (excludeQuotesCheckbox.checked) {
-                        const isInQuotes = Array.from(quotedRanges).some(range => {
-                            const [quoteStart, quoteEnd] = range.split('-').map(Number);
-                            return start >= quoteStart && end <= quoteEnd;
-                        });
-                        if (isInQuotes) continue;
-                    }
-
-                    // Check if this range overlaps with any existing matches
-                    const isOverlapping = Array.from(usedRanges).some(range => {
-                        const [usedStart, usedEnd] = range.split('-').map(Number);
-                        return (start >= usedStart && start < usedEnd) ||
-                               (end > usedStart && end <= usedEnd) ||
-                               (start <= usedStart && end >= usedEnd);
+                // Skip if in quoted text
+                if (excludeQuotesCheckbox.checked) {
+                    const isInQuotes = Array.from(quotedRanges).some(range => {
+                        const [quoteStart, quoteEnd] = range.split('-').map(Number);
+                        return start >= quoteStart && end <= quoteEnd;
                     });
-
-                    if (!isOverlapping) {
-                        matches.push({
-                            start,
-                            end,
-                            text: match[0],
-                            termIndex: index,
-                            term
-                        });
-                        usedRanges.add(`${start}-${end}`);
-                    }
+                    if (isInQuotes) continue;
                 }
-            });
 
-            return matches.sort((a, b) => a.start - b.start);
+                // Check if this range overlaps with any existing matches
+                const isOverlapping = Array.from(usedRanges).some(range => {
+                    const [usedStart, usedEnd] = range.split('-').map(Number);
+                    return (start >= usedStart && start < usedEnd) ||
+                        (end > usedStart && end <= usedEnd) ||
+                        (start <= usedStart && end >= usedEnd);
+                });
+
+                if (!isOverlapping) {
+                    matches.push({
+                        start,
+                        end,
+                        text: match[0],
+                        termIndex: index,
+                        term
+                    });
+                    usedRanges.add(`${start}-${end}`);
+                }
+            }
+        });
+
+        return matches.sort((a, b) => a.start - b.start);
+    }
+
+    function highlightText() {
+        // Save the caret position
+        const selection = window.getSelection();
+        const range = selection.getRangeAt(0);
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(textArea);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+        const caretOffset = preCaretRange.toString().length;
+
+        const text = textArea.innerText;
+        const searchTerms = searchInput.value
+            .split(',')
+            .map(term => term.trim())
+            .filter(term => term.length > 0);
+
+        if (searchTerms.length === 0) {
+            statsText.innerHTML = 'Stats will show here...';
+            return;
         }
 
-        function highlightText() {
-            const text = textArea.value;
-            const searchTerms = searchInput.value
-                .split(',')
-                .map(term => term.trim())
-                .filter(term => term.length > 0);
+        const matches = findAllMatches(text, searchTerms);
+        const occurrences = {};
+        searchTerms.forEach(term => occurrences[term] = 0);
 
-            if (searchTerms.length === 0) {
-                output.textContent = text;
-                statsText.innerHTML = 'Stats will show here...';
-                return;
+        let result = '';
+        let lastIndex = 0;
+
+        matches.forEach(match => {
+            occurrences[match.term]++;
+
+            if (match.start > lastIndex) {
+                result += text.substring(lastIndex, match.start)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
             }
 
-            const matches = findAllMatches(text, searchTerms);
-            const occurrences = {};
-            searchTerms.forEach(term => occurrences[term] = 0);
-            
-            let result = '';
-            let lastIndex = 0;
+            result += `<span style="background-color: ${colors[match.termIndex % colorCount]}">`;
+            result += text.substring(match.start, match.end)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            result += '</span>';
 
-            matches.forEach(match => {
-                occurrences[match.term]++;
-                
-                if (match.start > lastIndex) {
-                    result += text.substring(lastIndex, match.start)
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;');
+            lastIndex = match.end;
+        });
+
+        if (lastIndex < text.length) {
+            result += text.substring(lastIndex)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        textArea.innerHTML = result;
+
+        // Restore the caret position
+        function setCurrentCursorPosition(el, chars) {
+            if (chars >= 0) {
+                const selection = window.getSelection();
+                const range = createRange(el, { count: chars });
+                if (range) {
+                    range.collapse(false);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
                 }
-                
-                result += `<span style="background-color: ${colors[match.termIndex % colorCount]}">`;
-                result += text.substring(match.start, match.end)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
-                result += '</span>';
-                
-                lastIndex = match.end;
-            });
+            }
+        }
 
-            if (lastIndex < text.length) {
-                result += text.substring(lastIndex)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
+        function createRange(node, chars, range) {
+            if (!range) {
+                range = document.createRange();
+                range.selectNode(node);
+                range.setStart(node, 0);
             }
 
-            output.innerHTML = result;
+            if (chars.count === 0) {
+                range.setEnd(node, chars.count);
+            } else if (node && chars.count > 0) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    if (node.textContent.length < chars.count) {
+                        chars.count -= node.textContent.length;
+                    } else {
+                        range.setEnd(node, chars.count);
+                        chars.count = 0;
+                    }
+                } else {
+                    for (let i = 0; i < node.childNodes.length; i++) {
+                        range = createRange(node.childNodes[i], chars, range);
 
-            // Update statistics text
-            const totalOccurrences = Object.values(occurrences).reduce((a, b) => a + b, 0);
-            let statsHTML = `<h3>Statistics</h3><p>Total occurrences: ${totalOccurrences}</p>`;
-            Object.entries(occurrences).forEach(([term, count], index) => {
-                statsHTML += `
+                        if (chars.count === 0) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return range;
+        }
+
+        if(document.activeElement.id === "textArea") setCurrentCursorPosition(textArea, caretOffset);
+
+        // Update statistics text
+        const totalOccurrences = Object.values(occurrences).reduce((a, b) => a + b, 0);
+        let statsHTML = `<h3>Statistics</h3><p>Total occurrences: ${totalOccurrences}</p>`;
+        Object.entries(occurrences).forEach(([term, count], index) => {
+            statsHTML += `
                     <div class="term-stat">
                         <div class="color-box" style="background-color: ${colors[index % colorCount]}"></div>
                         <span>"${term}": ${count} occurrence${count !== 1 ? 's' : ''}</span>
                     </div>
                 `;
-            });
-            statsText.innerHTML = statsHTML;
-        }
+        });
+        statsText.innerHTML = statsHTML;
+    }
 
-        searchInput.addEventListener('input', highlightText);
-        textArea.addEventListener('input', highlightText);
-        wholeWordCheckbox.addEventListener('change', highlightText);
-        excludeQuotesCheckbox.addEventListener('change', highlightText);
-    </script>
+    searchInput.addEventListener('input', highlightText);
+    textArea.addEventListener('input', highlightText);
+    wholeWordCheckbox.addEventListener('change', highlightText);
+    excludeQuotesCheckbox.addEventListener('change', highlightText);
+
+    // Initialize highlighting on page load
+    textArea.addEventListener('focus', function() {
+        if (textArea.innerText.trim() === '') {
+            textArea.innerHTML = '';
+        }
+    });
+</script>
 </body>
 </html>
